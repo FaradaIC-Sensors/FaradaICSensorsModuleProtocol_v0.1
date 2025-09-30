@@ -1,5 +1,7 @@
 # FaradaIC Sensors FaradayOx Module Protocol
 
+[Source](https://github.com/FaradaIC-Sensors/FaradaICSensorsModuleProtocol_v0.1)
+
 ## 1. Hardware Settings
 
 ![Pinout](Images/Pinout.png)
@@ -19,7 +21,7 @@
 
 ### 1.2 UART Settings
 
-**UART** settings: baudarate 115200, 8 data bit, 1 stop bit, parity - none, flow control - none
+**UART** settings: baud rate 115200, 8 data bit, 1 stop bit, parity - none, flow control - none
 
 ### 1.3 Protocol
 
@@ -27,47 +29,128 @@
 
 All messages to and from the Module are **Framed**.
 
-First byte is **STX**: ```0x02```
+##### General Frame Structure
 
-Last byte is **ETX**: ```0x0A```
+```
+┌─────┬──────────────┬───────────┬───────────┬─────┐
+│ STX │   PAYLOAD    │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼──────────────┼───────────┼───────────┼─────┤
+│0x02 │ 1-N bytes    │   1 byte  │   1 byte  │0x0A │
+└─────┴──────────────┴───────────┴───────────┴─────┘
+```
 
-Preceding the **ETX** byte, there are 2 **CRC16** bytes.
+- **STX** (Start of Text): ```0x02```
+- **ETX** (End of Text): ```0x0A```
+- **CRC16**: 2 bytes preceding ETX, transmitted in little endian order (LSB first, then MSB)
+- All multi-byte values are transmitted in little endian byte order
+- CRC is computed from the payload only (STX and ETX are not included)
 
-The **CRC16** value transmitted in little endian order: first **CRC16_LSB**, than **CRC16_MSB**.
+##### Standard Response Frames
 
-**READY** response: **STX**, **'R'**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x52 0x47 0x9B 0x0A```
+**READY Response Frame:**
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ 'R' │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x52 │   0x47    │   0x9B    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
 
-**ACK** Acknowledge response: **STX**, **'A'**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x41 0x15 0xB9 0x0A```
+**ACK (Acknowledge) Response Frame:**
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ 'A' │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x41 │   0x15    │   0xB9    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
 
-**NACK** Error response: **STX**, **'N'**, **<ERROR_CODE>**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x4E <ERROR_CODE> CRC16_LSB CRC16_MSB 0x0A```
+**NACK (Error) Response Frame:**
+```
+┌─────┬─────┬────────────┬───────────┬───────────┬─────┐
+│ STX │ 'N' │ ERROR_CODE │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼────────────┼───────────┼───────────┼─────┤
+│0x02 │0x4E │  1 byte    │  1 byte   │  1 byte   │0x0A │
+└─────┴─────┴────────────┴───────────┴───────────┴─────┘
+```
 
 #### 1.3.2 Protocol READ Operation
 
-**READ** Operation: ```0xAA```
+**READ Operation Code:** ```0xAA```
 
-**READ** request has the following form:
+##### READ Request Frame
+```
+┌─────┬───────────────┬─────────────┬─────────────┬─────────────────┬─────────────────┬──────┬───────────┬───────────┬─────┐
+│ STX │ READ_OPERATION│ ADDRESS_LSB │ ADDRESS_MSB │ DATA_LENGTH_LSB │ DATA_LENGTH_MSB │ DATA │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼───────────────┼─────────────┼─────────────┼─────────────────┼─────────────────┼──────┼───────────┼───────────┼─────┤
+│0x02 │     0xAA      │   1 byte    │   1 byte    │     1 byte      │     1 byte      │ N    │  1 byte   │  1 byte   │0x0A │
+│     │               │             │             │                 │                 │bytes │           │           │     │
+└─────┴───────────────┴─────────────┴─────────────┴─────────────────┴─────────────────┴──────┴───────────┴───────────┴─────┘
+```
 
-**STX**, **READ_OPERATION**, **ADDRESS_LSB**, **ADDRESS_MSB**, **DATA_LENGTH_LSB**, **DATA_LENGTH_MSB**, **<DATA>**, **CRC16_LSB**, **CRC16_MSB**, **ETX**
+**Fields:**
+- **DATA_LENGTH**: Payload length in bytes (little endian, 16-bit)
+- **ADDRESS**: Address offset of the first register from 0 (little endian, 16-bit)
+- **DATA**: Optional data payload (typically empty for READ requests)
 
 Before the **READ** operation it is advisable to perform a **PING** (see [1.5 Wake up](#15-wake-up)) to ensure that the module is not in the Stop mode.
 
-On successfull **READ** operation the module returns following response:
-- If it is empty **READ** (read with 0 length): **STX**, **ACK**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x41 0x15 0xB9 0x0A```. More on empty read here [1.5 Wake up](#15-wake-up)
-- If it is not empty **READ**: **STX**, **ACK**, **ADDRESS_LSB**, **ADDRESS_MSB**, **DATA_LENGTH_LSB**, **DATA_LENGTH_MSB**, **<DATA>**, **CRC16_LSB**, **CRC16_MSB**, **ETX**
-- If address is not valid, read length is too big, crc16 is invalid or some other error the **NACK** Error response. 
+##### READ Response Frames
+
+**Empty READ Response (Length = 0):**
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ ACK │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x41 │   0x15    │   0xB9    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
+
+**Non-Empty READ Response:**
+```
+┌─────┬─────┬─────────────┬─────────────┬─────────────────┬─────────────────┬──────┬───────────┬───────────┬─────┐
+│ STX │ ACK │ ADDRESS_LSB │ ADDRESS_MSB │ DATA_LENGTH_LSB │ DATA_LENGTH_MSB │ DATA │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼─────────────┼─────────────┼─────────────────┼─────────────────┼──────┼───────────┼───────────┼─────┤
+│0x02 │0x41 │   1 byte    │   1 byte    │     1 byte      │     1 byte      │ N    │  1 byte   │  1 byte   │0x0A │
+│     │     │             │             │                 │                 │bytes │           │           │     │
+└─────┴─────┴─────────────┴─────────────┴─────────────────┴─────────────────┴──────┴───────────┴───────────┴─────┘
+```
+
+**Error Response:** If address is not valid, read length is too big, CRC16 is invalid or some other error occurs, the module responds with a **NACK** Error response (see standard response frames above). 
 
 #### 1.3.3 Protocol WRITE Operation
 
-**WRITE** Operation: ```0x55```
+**WRITE Operation Code:** ```0x55```
 
-**WRITE** request has the following form:
+##### WRITE Request Frame
+```
+┌─────┬────────────────┬─────────────┬─────────────┬─────────────────┬─────────────────┬──────┬───────────┬───────────┬─────┐
+│ STX │ WRITE_OPERATION│ ADDRESS_LSB │ ADDRESS_MSB │ DATA_LENGTH_LSB │ DATA_LENGTH_MSB │ DATA │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼────────────────┼─────────────┼─────────────┼─────────────────┼─────────────────┼──────┼───────────┼───────────┼─────┤
+│0x02 │     0x55       │   1 byte    │   1 byte    │     1 byte      │     1 byte      │ N    │  1 byte   │  1 byte   │0x0A │
+│     │                │             │             │                 │                 │bytes │           │           │     │
+└─────┴────────────────┴─────────────┴─────────────┴─────────────────┴─────────────────┴──────┴───────────┴───────────┴─────┘
+```
 
-**STX**, **WRITE_OPERATION**, **ADDRESS_LSB**, **ADDRESS_MSB**, **DATA_LENGTH_LSB**, **DATA_LENGTH_MSB**, **<DATA>**, **CRC16_LSB**, **CRC16_MSB**, **ETX**
+**Fields:**
+- **DATA_LENGTH**: Written payload length in bytes (little endian, 16-bit)
+- **ADDRESS**: Address offset of the first register from 0 (little endian, 16-bit)
+- **DATA**: Data payload to be written
 
 Before the **WRITE** operation it is advisable to perform a **PING** (see [1.5 Wake up](#15-wake-up)) to ensure that the module is not in the Stop mode.
 
-On successfull **WRITE** operation module responds with **ACK** response: ```0x02 0x41 0x15 0xB9 0x0A``` (see [1.3.1 Protocol structure information](#131-protocol-structure-information)).
-If address is not valid, read length is too big, crc16 is invalid or some other error the **NACK** Error response. 
+##### WRITE Response Frame
+
+**Successful WRITE Response:**
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ ACK │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x41 │   0x15    │   0xB9    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
+
+**Error Response:** If address is not valid, write length is too big, CRC16 is invalid or some other error occurs, the module responds with a **NACK** Error response (see standard response frames above). 
 
 #### 1.3.4 Protocol possible Error Codes
 
@@ -87,7 +170,7 @@ If address is not valid, read length is too big, crc16 is invalid or some other 
 CRC16 function used by the module is [CRC-16/CCITT-FALSE](https://reveng.sourceforge.io/crc-catalogue/16.htm) (width=16 poly=0x1021 init=0xffff refin=false refout=false xorout=0x0000)
 CRC is computed from body of the frame (**STX** and **ETX** aren't included).
 
-Impementation used in module's firmware:
+Implementation used in module's firmware:
 
 ```C
 static const uint16_t crc16_tab[256] = {
@@ -128,27 +211,57 @@ uint16_t crc16_ccitt_false(const uint8_t* data, size_t len)
 
 ### 1.5 Wake up
 
-When module is idle it's configured to go into the power efficient Stop mode.
+When module is idle, it's configured to go into the power efficient Stop mode.
 In the Stop mode module disables the UART peripheral on 3 and 4 pins.
 TX UART Pin is Output HIGH in Stop Mode.
 RX UART Pin is in waiting for interrupt mode, pulled up HIGH.
 To wake Module up it is required to either send the interrupt on the RX UART Pin,
 or preferably try to write a message to the module.
-When module is in sleep the message will be ignored, but module will wake up and
+When module is in stop mode the message will be ignored, but module will wake up and
 send READY response.
 
-To wake up the device empty **READ** command can be used:
-```0x02 0xAA 0x00 0x00 0x00 0x00 0x50 0xF5 0x0A```
+##### PING Command Frame (Empty READ)
 
-In response to this command the module will respond in two ways:
-1. **READY** in the case it was in Stop mode: ```0x02 0x52 0x47 0x9B 0x0A```
-2. **ACK** in the case it was already awoken before: ```0x02 0x41 0x15 0xB9 0x0A```
+To wake up the device empty **READ** command can be used:
+
+```
+┌─────┬───────────────┬─────────────┬─────────────┬─────────────────┬─────────────────┬───────────┬───────────┬─────┐
+│ STX │ READ_OPERATION│ ADDRESS_LSB │ ADDRESS_MSB │ DATA_LENGTH_LSB │ DATA_LENGTH_MSB │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼───────────────┼─────────────┼─────────────┼─────────────────┼─────────────────┼───────────┼───────────┼─────┤
+│0x02 │     0xAA      │    0x00     │    0x00     │      0x00       │      0x00       │   0x50    │   0xF5    │0x0A │
+└─────┴───────────────┴─────────────┴─────────────┴─────────────────┴─────────────────┴───────────┴───────────┴─────┘
+```
+
+Complete PING command: ```0x02 0xAA 0x00 0x00 0x00 0x00 0x50 0xF5 0x0A```
+
+##### PING Response Frames
+
+The module will respond in two ways:
+
+**1. READY Response** (if module was in Stop mode):
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ 'R' │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x52 │   0x47    │   0x9B    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
+
+**2. ACK Response** (if module was already awake):
+```
+┌─────┬─────┬───────────┬───────────┬─────┐
+│ STX │ ACK │ CRC16_LSB │ CRC16_MSB │ ETX │
+├─────┼─────┼───────────┼───────────┼─────┤
+│0x02 │0x41 │   0x15    │   0xB9    │0x0A │
+└─────┴─────┴───────────┴───────────┴─────┘
+```
 
 Response should be returned before 10ms.
 Both **READY** and **ACK** responses indicate that module is ready for subsequent communication.
 
 It is advisable to send **PING** with empty **READ** before every request,
-to make sure that device is not sleeping.
+to make sure that device is not in stop mode.
+
 
 ### 1.6 Register Map
 
@@ -218,7 +331,7 @@ indicating that measurement has started.
 
 It is not allowed to start measurement if old measurement is still ongoing.
 
-This will allow to see if the measurement finished successfully by inspecting the **REG_STATUS** register. For successfull measurement bits ```0x01``` **MEASUREMENT_FINISHED** and ```0x10``` **SHT4X_MEASUREMENT_FINISHED** should be set and all the other bits should be 0.
+This will allow to see if the measurement finished successfully by inspecting the **REG_STATUS** register. For successful measurement bits ```0x01``` **MEASUREMENT_FINISHED** and ```0x10``` **SHT4X_MEASUREMENT_FINISHED** should be set and all the other bits should be 0.
 
 When setting up the module it is possible to run only mesurement of temperature and humidity,
 without triggering the measurement:
@@ -231,5 +344,6 @@ indicating that measurement has started.
 
 ### 1.7 Example impementations
 
-**FaradayOxArduinoExample.zip** - Example implementation for Arduino written in C.
-**FaradayOxPythonExample.zip** - Example python script to communicate with the module from the PC. Module should be connected to PC with USB-UART converter.
+[FaradayOxArduinoExample_v1.0](https://github.com/FaradaIC-Sensors/FaradayOxArduinoExample_v1.0) - Example implementation for Arduino written in C.
+
+[FaradayOxPythonExample_v1.0](https://github.com/FaradaIC-Sensors/FaradayOxPythonExample_v1.0) - Example python script to communicate with the module from the PC. Module should be connected to PC with USB-UART converter.
