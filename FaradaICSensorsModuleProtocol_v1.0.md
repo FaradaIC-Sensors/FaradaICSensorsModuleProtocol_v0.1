@@ -29,7 +29,7 @@ All messages to and from the Module are **Framed**.
 
 First byte is **STX**: ```0x02```
 
-Last byte is **ETX**: ```0x03```
+Last byte is **ETX**: ```0x0A```
 
 Preceding the **ETX** byte, there are 2 **CRC16** bytes.
 
@@ -39,7 +39,7 @@ The **CRC16** value transmitted in little endian order: first **CRC16_LSB**, tha
 
 **ACK** Acknowledge response: **STX**, **'A'**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x41 0x15 0xB9 0x0A```
 
-**NACK** Error response: **STX**, **'N'**, **<ERROR_CODE>**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x4E <ERROR_CODE> CRC16_LSB CRC16_LSB 0x0A```
+**NACK** Error response: **STX**, **'N'**, **<ERROR_CODE>**, **CRC16_LSB**, **CRC16_MSB**, **ETX** - ```0x02 0x4E <ERROR_CODE> CRC16_LSB CRC16_MSB 0x0A```
 
 #### 1.3.2 Protocol READ Operation
 
@@ -84,8 +84,7 @@ If address is not valid, read length is too big, crc16 is invalid or some other 
 
 ### 1.4 CRC16
 
-CRC16 function used by the module is [CRC-16/IBM-3740](https://reveng.sourceforge.io/crc-catalogue/16.htm) (Alias: CRC-16/AUTOSAR, CRC-16/CCITT-FALSE)
-
+CRC16 function used by the module is [CRC-16/CCITT-FALSE](https://reveng.sourceforge.io/crc-catalogue/16.htm) (width=16 poly=0x1021 init=0xffff refin=false refout=false xorout=0x0000)
 CRC is computed from body of the frame (**STX** and **ETX** aren't included).
 
 Impementation used in module's firmware:
